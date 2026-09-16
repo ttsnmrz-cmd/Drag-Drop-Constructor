@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Gap Fill Constructor</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        .dragging { opacity: 0.4; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="max-w-2xl w-full bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+        
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800">Drag & Drop Constructor</h1>
+                <p class="text-gray-500 text-sm">Drag words into gaps or add new exercises below.</p>
+            </div>
+            <button id="toggle-editor" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer">
+                ⚙️ Toggle Editor
+            </button>
+        </div>
+
+        <!-- ПАНЕЛЬ КОНСТРУКТОРА (скрыта по умолчанию) -->
+        <div id="editor-panel" class="hidden mb-6 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 space-y-4">
+            <h3 class="font-bold text-sm text-indigo-900">Add New Exercise Item</h3>
+            <div class="grid grid-cols-1 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Sentence (use <code class="bg-white px-1 py-0.5 rounded text-indigo-600">___</code> for the gap):</label>
+                    <input type="text" id="new-sentence" placeholder="e.g., Freedom requires constant ___." class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Correct Answer (the word):</label>
+                    <input type="text" id="new-answer" placeholder="e.g., vigilance" class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+                </div>
+                <button id="add-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition cursor-pointer">
+                    + Add to Exercise
+                </button>
+            </div>
+        </div>
+
+        <!-- ПУЛ СЛОВ (ДЖЕТТОНЫ) -->
+        <div class="mb-6">
+            <span class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Available Words</span>
+            <div id="word-pool" class="flex flex-wrap gap-2.5 p-4 bg-gray-50 rounded-xl min-h-[70px] border border-dashed border-gray-300 items-center">
+                <!-- Динамически заполняется через JS -->
+            </div>
+        </div>
+
+        <!-- ПРЕДЛОЖЕНИЯ С ПРОПУСКАМИ -->
+        <div id="exercises-container" class="space-y-4 text-gray-700">
+            <!-- Динамически заполняется через JS -->
+        </div>
+
+        <!-- КНОПКА ПРОВЕРКИ -->
+        <div class="mt-8 pt-4 border-t border-gray-100 flex justify-between items-center">
+            <button id="check-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-xl transition shadow-md cursor-pointer">
+                Check Answers
+            </button>
+            <div id="result-msg" class="font-semibold text-sm"></div>
+        </div>
+    </div>
+
+    <!-- СКРИПТ УПРАВЛЕНИЯ И КОНСТРУКТОРА -->
+    <script>
+        // Исходные данные по умолчанию (можно редактировать или добавлять новые)
+        let tasks = [
+            { sentence: "Many young activists start their journey with pure ___, believing they can change the world.", answer: "innocence" },
+            { sentence: "In a truly ___ society, freedom is severely limited.", answer: "dystopian" },
+            { sentence: "After 10 PM, the government imposed a mandatory ___.", answer: "curfew" }
+        ];
+
+        const wordPool = document.getElementById('word-pool');
+        const exercisesContainer = document.getElementById('exercises-container');
+        const checkBtn = document.getElementById('check-btn');
+        const resultMsg = document.getElementById('result-msg');
+        const toggleEditorBtn = document.getElementById('toggle-editor');
+        const editorPanel = document.getElementById('editor-panel');
+        const addBtn = document.getElementById('add-btn');
+        const newSentenceInput = document.getElementById('new-sentence');
+        const newAnswerInput = document.getElementById('new-answer');
+
+        let draggedWord = null;
+
+        // Переключение видимости панели конструктора
+        toggleEditorBtn.addEventListener('click', () => {
+            editorPanel.classList.toggle('hidden');
+        });
+
+        // Функция рендеринга упражнения
+        function renderApp() {
+            wordPool.innerHTML = '';
+            exercisesContainer.innerHTML = '';
+            resultMsg.textContent = '';
+
+            // Собираем все слова (перемешиваем для интереса)
+            let words = tasks.map(t => t.answer);
+            // Можно раскомментировать для перемешивания: words.sort(() => Math.random() - 0.5);
+
+            // Рендерим пул слов
+            words.forEach(word => {
+                const wordEl = document.createElement('div');
+                wordEl.draggable = true;
+                wordEl.className = "word bg-white px-3.5 py-1.5 rounded-lg shadow-sm border border-gray-200 cursor-grab font-medium text-sm text-gray-700 hover:border-indigo-400 transition";
+                wordEl.setAttribute('data-word', word);
+                wordEl.textContent = word;
+
+                // События перетаскивания слова
+                wordEl.addEventListener('dragstart', (e) => {
+                    draggedWord = wordEl;
+                    setTimeout(() => wordEl.classList.add('dragging'), 0);
+                });
+                wordEl.addEventListener('dragend', () => {
+                    wordEl.classList.remove('dragging');
+                    draggedWord = null;
+                });
+
+                wordPool.appendChild(wordEl);
+            });
+
+            // Рендерим предложения
+            tasks.forEach((task, index) => {
+                const row = document.createElement('div');
+                row.className = "flex items-center flex-wrap gap-2 text-base bg-gray-50/50 p-3 rounded-xl border border-gray-100";
+
+                // Разбиваем предложение по маркерам "___"
+                const parts = task.sentence.split('___');
+
+                // Первая часть текста
+                const span1 = document.createElement('span');
+                span1.textContent = `${index + 1}. ${parts[0]}`;
+                row.appendChild(span1);
+
+                // Зона высадки (dropzone)
+                const dropzone = document.createElement('div');
+                dropzone.className = "dropzone w-32 h-9 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-white text-xs font-medium transition inline-flex";
+                dropzone.setAttribute('data-answer', task.answer);
+                row.appendChild(dropzone);
+
+                // Вторая часть текста (если есть)
+                if (parts[1]) {
+                    const span2 = document.createElement('span');
+                    span2.textContent = parts[1];
+                    row.appendChild(span2);
+                }
+
+                exercisesContainer.appendChild(row);
+            });
+
+            initDropzones();
+        }
+
+        // Инициализация логики dropzone для всех элементов
+        function initDropzones() {
+            const dropzones = document.querySelectorAll('.dropzone');
+
+            [...dropzones, wordPool].forEach(zone => {
+                zone.addEventListener('dragover', (e) => e.preventDefault());
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    if (zone === wordPool || zone.children.length === 0) {
+                        zone.appendChild(draggedWord);
+                        zone.classList.remove('border-green-500', 'bg-green-50', 'border-red-500', 'bg-red-50');
+                        if (zone !== wordPool) {
+                            zone.classList.add('border-gray-300', 'bg-white');
+                        }
+                    }
+                });
+            });
+        }
+
+        // Добавление нового задания через панель конструктора
+        addBtn.addEventListener('click', () => {
+            const sentence = newSentenceInput.value.trim();
+            const answer = newAnswerInput.value.trim().toLowerCase();
+
+            if (!sentence || !answer) {
+                alert("Please fill in both fields!");
+                return;
+            }
+            if (!sentence.includes("___")) {
+                alert("Sentence must contain '___' for the gap!");
+                return;
+            }
+
+            tasks.push({ sentence, answer });
+            newSentenceInput.value = '';
+            newAnswerInput.value = '';
+            renderApp();
+        });
+
+        // Проверка ответов
+        checkBtn.addEventListener('click', () => {
+            const dropzones = document.querySelectorAll('.dropzone');
+            let correctCount = 0;
+            let total = dropzones.length;
+
+            dropzones.forEach(zone => {
+                const userWord = zone.firstElementChild ? zone.firstElementChild.getAttribute('data-word') : null;
+                const correctAnswer = zone.getAttribute('data-answer');
+
+                zone.classList.remove('border-gray-300', 'bg-white', 'border-green-500', 'bg-green-50', 'border-red-500', 'bg-red-50');
+
+                if (userWord === correctAnswer) {
+                    zone.classList.add('border-green-500', 'bg-green-50', 'text-green-700');
+                    correctCount++;
+                } else {
+                    zone.classList.add('border-red-500', 'bg-red-50', 'text-red-700');
+                }
+            });
+
+            if (correctCount === total) {
+                resultMsg.textContent = "🎉 Brilliant! All answers are correct!";
+                resultMsg.className = "font-semibold text-sm text-green-600";
+            } else {
+                resultMsg.textContent = `⚠️ Checked: ${correctCount} of ${total} correct.`;
+                resultMsg.className = "font-semibold text-sm text-amber-600";
+            }
+        });
+
+        // Первичный запуск
+        renderApp();
+    </script>
+</body>
+</html>
