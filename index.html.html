@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LMS Language Platform</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>.dragging { opacity: 0.4; }</style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center p-6">
+
+    <div class="max-w-3xl w-full bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+        
+        <!-- НАВИГАЦИЯ (Хлебные крошки) -->
+        <div id="breadcrumbs" class="text-sm text-gray-400 mb-6 flex items-center gap-2">
+            <!-- Динамически заполняется -->
+        </div>
+
+        <!-- ОСНОВНОЙ КОНТЕЙНЕР ДИНАМИЧЕСКИХ ЭКРАНОВ -->
+        <div id="app-content">
+            <!-- Сюда рендерится текущий уровень структуры -->
+        </div>
+
+    </div>
+
+    <script>
+        // Исходная база данных (структура уровней) по умолчанию
+        const defaultData = [
+            {
+                id: "b1",
+                title: "Учебник: Upper-Intermediate (B2)",
+                sections: [
+                    {
+                        id: "s1",
+                        title: "Раздел 1: Society & Politics",
+                        subsections: [
+                            {
+                                id: "sub1",
+                                title: "Секция 1.1: Utopias and Dystopias",
+                                tasks: [
+                                    { sentence: "Many young activists start their journey with pure ___, believing they can change the world.", answer: "innocence" },
+                                    { sentence: "In a truly ___ society, freedom is strictly controlled.", answer: "dystopian" }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ];
+
+        // Загружаем данные из localStorage или берем дефолтные
+        let appData = JSON.parse(localStorage.getItem('lms_data')) || defaultData;
+
+        // Состояние навигации (какие ID сейчас открыты)
+        let currentNav = {
+            bookId: null,
+            sectionId: null,
+            subsectionId: null,
+            viewMode: 'books' // 'books' | 'sections' | 'subsections' | 'exercise' | 'add_subsection'
+        };
+
+        function saveData() {
+            localStorage.setItem('lms_data', JSON.stringify(appData));
+        }
+
+        // РЕНДЕР ИНТЕРФЕЙСА
+        function render() {
+            renderBreadcrumbs();
+            const container = document.getElementById('app-content');
+            container.innerHTML = '';
+
+            if (currentNav.viewMode === 'books') {
+                renderBooksList(container);
+            } else if (currentNav.viewMode === 'sections') {
+                renderSectionsList(container);
+            } else if (currentNav.viewMode === 'subsections') {
+                renderSubsectionsList(container);
+            } else if (currentNav.viewMode === 'exercise') {
+                renderExerciseView(container);
+            } else if (currentNav.viewMode === 'add_subsection') {
+                renderAddSubsectionView(container);
+            }
+        }
+
+        // Хлебные крошки
+        function renderBreadcrumbs() {
+            const bc = document.getElementById('breadcrumbs');
+            let html = `<span class="cursor-pointer hover:text-indigo-600 font-medium" onclick="goToView('books')">📚 Материалы</span>`;
+            
+            if (currentNav.bookId) {
+                const book = appData.find(b => b.id === currentNav.bookId);
+                html += ` / <span class="cursor-pointer hover:text-indigo-600 font-medium" onclick="openBook('${book.id}')">${book.title}</span>`;
+            }
+            if (currentNav.sectionId) {
+                const book = appData.find(b => b.id === currentNav.bookId);
+                const sec = book.sections.find(s => s.id === currentNav.sectionId);
+                html += ` / <span class="cursor-pointer hover:text-indigo-600 font-medium" onclick="openSection('${sec.id}')">${sec.title}</span>`;
+            }
+            if (currentNav.subsectionId && currentNav.viewMode === 'exercise') {
+                html += ` / <span class="text-indigo-600 font-bold">Выполнение задания</span>`;
+            }
+            bc.innerHTML = html;
+        }
+
+        // 1. УРОВЕНЬ: Список учебников
+        function renderBooksList(container) {
+            container.innerHTML = `
+                <h1 class="text-2xl font-bold text-gray-800 mb-4">Список учебников</h1>
+                <div class="space-y-3 mb-6" id="books-list"></div>
+                <div class="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                    <h3 class="font-bold text-sm text-gray-700 mb-2">+ Добавить новый учебник</h3>
+                    <input type="text" id="new-book-title" placeholder="Название учебника..." class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2">
+                    <button onclick="addBook()" class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg font-semibold">Создать учебник</button>
+                </div>
+            `;
+            const list = document.getElementById('books-list');
+            appData.forEach(book => {
+                const card = document.createElement('div');
+                card.className = "p-4 bg-indigo-50/40 rounded-xl border border-indigo-100 flex justify-between items-center cursor-pointer hover:bg-indigo-50 transition";
+                card.innerHTML = `<span class="font-semibold text-gray-800">${book.title}</span> <span class="text-indigo-600 text-sm font-medium">Открыть →</span>`;
+                card.onclick = () => openBook(book.id);
+                list.appendChild(card);
+            });
+        }
+
+        function addBook() {
+            const title = document.getElementById('new-book-title').value.trim();
+            if(!title) return;
+            appData.push({ id: 'b_' + Date.now(), title, sections: [] });
+            saveData();
+            render();
+        }
+
+        function openBook(bookId) {
+            currentNav.bookId = bookId;
+            currentNav.sectionId = null;
+            currentNav.viewMode = 'sections';
+            render();
+        }
+
+        // 2. УРОВЕНЬ: Список разделов учебника
+        function renderSectionsList(container) {
+            const book = appData.find(b => b.id === currentNav.bookId);
+            container.innerHTML = `
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">${book.title}</h1>
+                <p class="text-sm text-gray-500 mb-4">Разделы учебника</p>
+                <div class="space-y-3 mb-6" id="sections-list"></div>
+                <div class="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                    <h3 class="font-bold text-sm text-gray-700 mb-2">+ Добавить раздел</h3>
+                    <input type="text" id="new-sec-title" placeholder="Название раздела..." class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2">
+                    <button onclick="addSection()" class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg font-semibold">Создать раздел</button>
+                </div>
+            `;
+            const list = document.getElementById('sections-list');
+            book.sections.forEach(sec => {
+                const card = document.createElement('div');
+                card.className = "p-4 bg-gray-50 rounded-xl border border-gray-200 flex justify-between items-center cursor-pointer hover:bg-gray-100 transition";
+                card.innerHTML = `<span class="font-semibold text-gray-800">${sec.title}</span> <span class="text-gray-600 text-sm">Секций: ${sec.subsections.length} →</span>`;
+                card.onclick = () => openSection(sec.id);
+                list.appendChild(card);
+            });
+        }
+
+        function addSection() {
+            const title = document.getElementById('new-sec-title').value.trim();
+            if(!title) return;
+            const book = appData.find(b => b.id === currentNav.bookId);
+            book.sections.push({ id: 's_' + Date.now(), title, subsections: [] });
+            saveData();
+            render();
+        }
+
+        function openSection(secId) {
+            currentNav.sectionId = secId;
+            currentNav.viewMode = 'subsections';
+            render();
+        }
+
+        // 3. УРОВЕНЬ: Секции с заданиями
+        function renderSubsectionsList(container) {
+            const book = appData.find(b => b.id === currentNav.bookId);
+            const sec = book.sections.find(s => s.id === currentNav.sectionId);
+            container.innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-800">${sec.title}</h1>
+                        <p class="text-sm text-gray-500">Секции и упражнения</p>
+                    </div>
+                    <button onclick="currentNav.viewMode='add_subsection'; render();" class="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg font-semibold">+ Добавить секцию</button>
+                </div>
+                <div class="space-y-3" id="sub-list"></div>
+            `;
+            const list = document.getElementById('sub-list');
+            if(sec.subsections.length === 0) {
+                list.innerHTML = `<p class="text-sm text-gray-400 italic">Секций пока нет. Создайте первую кнопку сверху!</p>`;
+                return;
+            }
+            sec.subsections.forEach(sub => {
+                const card = document.createElement('div');
+                card.className = "p-4 bg-white rounded-xl border border-gray-200 shadow-sm flex justify-between items-center";
+                card.innerHTML = `
+                    <div>
+                        <h4 class="font-bold text-gray-800">${sub.title}</h4>
+                        <span class="text-xs text-gray-500">Заданий в секции: ${sub.tasks.length}</span>
+                    </div>
+                    <button onclick="startExercise('${sub.id}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-4 py-2 rounded-lg font-semibold">Выполнить</button>
+                `;
+                list.appendChild(card);
+            });
+        }
+
+        // Экран добавления секции
+        function renderAddSubsectionView(container) {
+            container.innerHTML = `
+                <h1 class="text-2xl font-bold text-gray-800 mb-4">Добавление новой секции</h1>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Название секции:</label>
+                        <input type="text" id="sub-title" placeholder="например, Секция 1.2: Advanced Grammar" class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div class="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+                        <h3 class="font-bold text-sm text-gray-700">Добавить первое задание (Gap Fill)</h3>
+                        <input type="text" id="task-sentence" placeholder="Предложение, где вместо слова ___" class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        <input type="text" id="task-answer" placeholder="Правильное слово (ответ)" class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="saveNewSubsection()" class="bg-indigo-600 text-white text-sm px-5 py-2.5 rounded-lg font-semibold">Сохранить секцию</button>
+                        <button onclick="currentNav.viewMode='subsections'; render();" class="bg-gray-200 text-gray-700 text-sm px-5 py-2.5 rounded-lg font-semibold">Отмена</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function saveNewSubsection() {
+            const title = document.getElementById('sub-title').value.trim();
+            const sentence = document.getElementById('task-sentence').value.trim();
+            const answer = document.getElementById('task-answer').value.trim().toLowerCase();
+
+            if(!title || !sentence || !answer) {
+                alert("Заполните все поля!");
+                return;
+            }
+
+            const book = appData.find(b => b.id === currentNav.bookId);
+            const sec = book.sections.find(s => s.id === currentNav.sectionId);
+            
+            sec.subsections.push({
+                id: 'sub_' + Date.now(),
+                title,
+                tasks: [{ sentence, answer }]
+            });
+            saveData();
+            currentNav.viewMode = 'subsections';
+            render();
+        }
+
+        function startExercise(subId) {
+            currentNav.subsectionId = subId;
+            currentNav.viewMode = 'exercise';
+            render();
+        }
+
+        // 4. УРОВЕНЬ: Выполнение упражнения (Drag & Drop)
+        function renderExerciseView(container) {
+            const book = appData.find(b => b.id === currentNav.bookId);
+            const sec = book.sections.find(s => s.id === currentNav.sectionId);
+            const sub = sec.subsections.find(s => s.id === currentNav.subsectionId);
+
+            let wordsHtml = sub.tasks.map(t => `<div draggable="true" class="word bg-white px-3.5 py-1.5 rounded-lg shadow-sm border border-gray-200 cursor-grab font-medium text-sm text-gray-700 hover:border-indigo-400 transition" data-word="${t.answer}">${t.answer}</div>`).join('');
+
+            let tasksHtml = sub.tasks.map((task, idx) => {
+                const parts = task.sentence.split('___');
+                return `
+                    <div class="flex items-center flex-wrap gap-2 text-base bg-gray-50/50 p-3 rounded-xl border border-gray-100">
+                        <span>${idx + 1}. ${parts[0]}</span>
+                        <div class="dropzone w-32 h-9 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-white text-xs font-medium transition inline-flex" data-answer="${task.answer}"></div>
+                        <span>${parts[1] || ''}</span>
+                    </div>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="mb-4">
+                    <h1 class="text-xl font-bold text-gray-800">${sub.title}</h1>
+                    <p class="text-xs text-gray-400">Перетащите слова в пропуски</p>
+                </div>
+                <div class="mb-6">
+                    <span class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Доступные слова</span>
+                    <div id="word-pool" class="flex flex-wrap gap-2.5 p-4 bg-gray-50 rounded-xl min-h-[60px] border border-dashed border-gray-300 items-center">
+                        ${wordsHtml}
+                    </div>
+                </div>
+                <div class="space-y-3 mb-6">${tasksHtml}</div>
+                <div class="flex justify-between items-center pt-4 border-t border-gray-100">
+                    <button id="check-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2.5 rounded-xl transition text-sm">Проверить</button>
+                    <div id="result-msg" class="font-semibold text-sm"></div>
+                </div>
+            `;
+
+            initDragAndDrop();
+        }
+
+        // Логика Drag-and-Drop для тренировок
+        function initDragAndDrop() {
+            const words = document.querySelectorAll('.word');
+            const dropzones = document.querySelectorAll('.dropzone');
+            const wordPool = document.getElementById('word-pool');
+            let draggedWord = null;
+
+            words.forEach(word => {
+                word.addEventListener('dragstart', () => {
+                    draggedWord = word;
+                    setTimeout(() => word.classList.add('dragging'), 0);
+                });
+                word.addEventListener('dragend', () => {
+                    draggedWord.classList.remove('dragging');
+                    draggedWord = null;
+                });
+            });
+
+            [...dropzones, wordPool].forEach(zone => {
+                zone.addEventListener('dragover', (e) => e.preventDefault());
+                zone.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    if (zone === wordPool || zone.children.length === 0) {
+                        zone.appendChild(draggedWord);
+                        zone.classList.remove('border-green-500', 'bg-green-50', 'border-red-500', 'bg-red-50');
+                        if (zone !== wordPool) zone.classList.add('border-gray-300', 'bg-white');
+                    }
+                });
+            });
+
+            document.getElementById('check-btn').addEventListener('click', () => {
+                let correct = 0;
+                dropzones.forEach(zone => {
+                    const userW = zone.firstElementChild ? zone.firstElementChild.getAttribute('data-word') : null;
+                    const ans = zone.getAttribute('data-answer');
+                    zone.classList.remove('border-gray-300', 'bg-white', 'border-green-500', 'bg-green-50', 'border-red-500', 'bg-red-50');
+                    if(userW === ans) {
+                        zone.classList.add('border-green-500', 'bg-green-50', 'text-green-700');
+                        correct++;
+                    } else {
+                        zone.classList.add('border-red-500', 'bg-red-50', 'text-red-700');
+                    }
+                });
+                const msg = document.getElementById('result-msg');
+                msg.textContent = correct === dropzones.length ? "🎉 Отлично! Все верно!" : `⚠️ Верно: ${correct} из ${dropzones.length}`;
+                msg.className = correct === dropzones.length ? "font-semibold text-sm text-green-600" : "font-semibold text-sm text-amber-600";
+            });
+        }
+
+        function goToView(mode) {
+            currentNav.viewMode = mode;
+            currentNav.bookId = null;
+            currentNav.sectionId = null;
+            currentNav.subsectionId = null;
+            render();
+        }
+
+        // Первичный запуск отрисовки
+        render();
+    </script>
+</body>
+</html>
